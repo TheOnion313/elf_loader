@@ -32,15 +32,8 @@ int hexdump_string(unsigned char *str, size_t str_size) {
         }
 }
 
-int main(int argc, char *argv[]) {
+int print_elf_header(const char *elf_file_path) {
     int ret = 0;
-    if (argc != 2) {
-        printf("Usage: readelf elf-file\n");
-
-        return 1;
-    }
-    const char *elf_file_path = argv[1];
-
     const int elf_file_fd = open(elf_file_path, O_RDONLY);
 
     unsigned char e_ident[EI_NIDENT];
@@ -233,4 +226,25 @@ int main(int argc, char *argv[]) {
         }
 
     return ret;
+}
+
+int main(int argc, char *argv[]) {
+    if (argc != 3) {
+        printf("Usage: readelf <mode> elf-file\n");
+
+        return 1;
+    }
+    const char *elf_file_path = argv[2];
+    const char *mode = argv[1];
+    if (mode[0] != '-') {
+        printf("Unknown mode: %s\n", mode);
+
+        return 1;
+    }
+    switch(mode[1]) {
+        case 'h':
+            return print_elf_header(elf_file_path);
+        default:
+            printf("Unknown mode: %s\n", mode);
+    }
 }

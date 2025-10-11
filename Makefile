@@ -8,5 +8,5 @@ readelf:
 reset: clean readelf
 
 test: reset
-	./bin/readelf /bin/ls
+	./bin/readelf -h /bin/ls
 	readelf -h /bin/ls
