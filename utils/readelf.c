@@ -1,105 +1,35 @@
 #include <sys/types.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <ctype.h>
 
-#define EI_NIDENT 16
+#include "../consts/value_tables.h"
+#include "../consts/types.h"
 
-#define ELF_MAGIC 0x7f454c46 # 0x7f + "ELF"
+int hexdump_string(unsigned char *str, size_t str_size) {
+    for (size_t j = 0; j < str_size;) {
+        size_t row_size = (str_size - j < 16) ? str_size - j : 16;
+        for (size_t i = 0; i < row_size; i++) {
+            printf("%02x ", str[j + i]);
 
-#define ELF_32BIT 1
-#define ELF_64BIT 2
-
-#define LSB 1
-#define MSB 2
-
-#define ELFOSABI_NONE 0
-#define ELFOSABI_HPUX 1
-#define ELFOSABI_NETBSD 2
-#define ELFOSABI_LINUX 3
-#define ELFOSABI_SOLARIS 6
-#define ELFOSABI_AIX 7
-#define ELFOSABI_IRIX 8
-#define ELFOSABI_FREEBSD 9
-#define ELFOSABI_TRU64 10
-#define ELFOSABI_MODESTO 11
-#define ELFOSABI_OPENBSD 12
-#define ELFOSABI_OPENVMS 13
-#define ELFOSABI_NSK 14
-
-#define ELFOSABI_DEFINED_VALUES 15
-
-typedef uint16_t HalfWord;
-typedef uint32_t Word;
-
-typedef uint32_t Address_32;
-typedef uint32_t Offset_32;
-
-typedef uint64_t Address_64;
-typedef uint64_t Offset_64;
-
-typedef struct {
-    unsigned char e_ident[EI_NIDENT];
-    HalfWord e_type;
-    HalfWord e_machine;
-    Word e_version;
-    Address_64 e_entry;
-    Offset_64  e_phoff;
-    Offset_64 e_shoff;
-    Word e_flags;
-    HalfWord e_ehsize;
-    HalfWord e_phentsize;
-    HalfWord e_phnum;
-    HalfWord e_shentsize;
-    HalfWord e_shnum;
-    HalfWord e_shstrndx;
-} ElfHeader_64;
-
-typedef struct {
-    unsigned char e_ident[EI_NIDENT];
-    HalfWord e_type;
-    HalfWord e_machine;
-    Word e_version;
-    Address_32 e_entry;
-    Offset_32  e_phoff;
-    Offset_32 e_shoff;
-    Word e_flags;
-    HalfWord e_ehsize;
-    HalfWord e_phentsize;
-    HalfWord e_phnum;
-    HalfWord e_shentsize;
-    HalfWord e_shnum;
-    HalfWord e_shstrndx;
-} ElfHeader_32;
-
-typedef struct {
-    unsigned char magic[4];
-    unsigned char class;
-    unsigned char data_order;
-    unsigned char version;
-    unsigned char os_abi;
-    unsigned char abi_version;
-    unsigned char padding[7];
-} EIdent;
-
-int hexdump_string(char *str, size_t str_size) {
-    for (size_t i = 0; i < str_size; i++) {
-        printf("%02x%s", str[i], i == str_size - 1 ? "" : " ");
-    }
-    printf(" [");
-    for (size_t i = 0; i < str_size; i++) {
-        char c = str[i];
-        if (isprint(c)) {
-            printf("%c", c);
-        } else {
-            printf(".");
         }
-    }
-    printf("]");
-
+        printf("[");
+        for (size_t i = 0; i < row_size; i++) {
+            char c = str[j + i];
+            if (isprint(c)) {
+                printf("%c", c);
+            } else {
+                printf(".");
+            }
+        }
+        j += row_size;
+        printf("]\n");
+        }
 }
 
 int main(int argc, char *argv[]) {
@@ -109,9 +39,9 @@ int main(int argc, char *argv[]) {
 
         return 1;
     }
-    char *elf_file_path = argv[1];
+    const char *elf_file_path = argv[1];
 
-    int elf_file_fd = open(elf_file_path, O_RDONLY);
+    const int elf_file_fd = open(elf_file_path, O_RDONLY);
 
     unsigned char e_ident[EI_NIDENT];
     size_t bytes_read = read(elf_file_fd, e_ident, EI_NIDENT);
@@ -121,12 +51,12 @@ int main(int argc, char *argv[]) {
         goto clean;
     }
 
-    printf("ELf Header:\n");
+    printf("ELF Header:\n");
     printf("  Magic:   ");
     hexdump_string(e_ident, EI_NIDENT);
     printf("\n");
 
-    EIdent *ident = (EIdent*)e_ident;
+    const EIdent *ident = (EIdent*)e_ident;
     char *class;
     switch(ident->class) {
         case ELF_64BIT:
@@ -158,22 +88,6 @@ int main(int argc, char *argv[]) {
     printf("  Data:                              %s\n", data);
     printf("  Version:                           %i\n", ident->version);
 
-
-    char *os_abi_index[ELFOSABI_DEFINED_VALUES];
-
-    os_abi_index[ELFOSABI_NONE] = "No extensions or unspecified";
-    os_abi_index[ELFOSABI_HPUX] = "Hewlett-Packard HP-UX";
-    os_abi_index[ELFOSABI_NETBSD] = "NetBSD";
-    os_abi_index[ELFOSABI_LINUX] = "Linux";
-    os_abi_index[ELFOSABI_SOLARIS] = "Sun Solaris";
-    os_abi_index[ELFOSABI_AIX] = "AIX";
-    os_abi_index[ELFOSABI_IRIX] = "IRIX";
-    os_abi_index[ELFOSABI_FREEBSD] = "FreeBSD";
-    os_abi_index[ELFOSABI_TRU64] = "Compaq TRU64 UNIX";
-    os_abi_index[ELFOSABI_MODESTO] = "Novell Modesto";
-    os_abi_index[ELFOSABI_OPENBSD] = "Open BSD";
-    os_abi_index[ELFOSABI_OPENVMS] = "Open VMS";
-    os_abi_index[ELFOSABI_NSK] = "Hewlett-Packard Non-Stop Kernel";
     char *os_abi;
     if (ident->os_abi >= ELFOSABI_DEFINED_VALUES) {
         os_abi = "Architecture-specific value";
@@ -183,8 +97,78 @@ int main(int argc, char *argv[]) {
     printf("  OS/ABI:                            %s\n", os_abi);
     printf("  ABI Version:                       %i\n", ident->abi_version);
 
+    void *elf_header;
+    size_t rest_of_header;
+    if (ident->class == ELF_64BIT) {
+        elf_header = (ElfHeader_64*) malloc(sizeof(ElfHeader_64));
+        rest_of_header = sizeof(ElfHeader_64) - EI_NIDENT;
+    } else {
+        elf_header = (ElfHeader_32*) malloc(sizeof(ElfHeader_32));
+        rest_of_header = sizeof(ElfHeader_32) - EI_NIDENT;
+    }
+    if (!elf_header) {
+        printf("Failed to allocate memory for ELF header");
+        ret = 1;
+        goto clean;
+    }
+
+    bytes_read = read(elf_file_fd, elf_header + EI_NIDENT, rest_of_header);
+    if (bytes_read != rest_of_header) {
+        printf("Failed to read ELF header, read %ld bytes\n", bytes_read);
+        ret = 1;
+        goto clean;
+    }
+    memcpy(elf_header, e_ident, EI_NIDENT);
+    // printf("ELF Header:\n");
+    // hexdump_string(elf_header + EI_NIDENT, rest_of_header);
+    
+    HalfWord type;
+    if (ident->class == ELF_64BIT) {
+        type = ((ElfHeader_64*)elf_header)->e_type;
+    } else {
+        type = ((ElfHeader_32*)elf_header)->e_type;        
+    }
+    char *type_val;
+    switch(type) {
+        case ET_NONE:
+            type_val = "(NONE) No file type";
+            break;
+        case ET_REL:
+            type_val = "(REL) Relocatable file";
+            break;
+        case ET_EXEC:
+            type_val = "(EXEC) Non PIE Executable file";
+            break;
+        case ET_DYN:
+            type_val = "(DYN) Shared object file or PIE Executable";
+            break;
+        case ET_CORE:
+            type_val = "(CORE) Core file";
+            break;
+        default:
+            type_val = "Undefined file type";
+            break;
+    }
+    printf("  Type:                              %s\n", type_val);
+    char *machine_val = "Invalid";
+    HalfWord machine;
+    if (ident->class == ELF_64BIT) {
+        machine = ((ElfHeader_64*)elf_header)->e_machine;
+    } else {
+        machine = ((ElfHeader_32*)elf_header)->e_machine;        
+    }
+    if (machine < ELFMACHINE_DEFINED_VALUES) {
+        machine_val = machine_index[machine];
+    }
+    printf("  Machine:                           %s\n", machine_val);
+
     clean:
-    close(elf_file_fd);
+    if (elf_file_fd) {
+        close(elf_file_fd);
+    }
+    if (elf_header) {
+        free(elf_header);
+    }
 
     return ret;
 }

@@ -3,7 +3,7 @@ clean:
 	rm -f ./bin/*
 
 readelf: 
-	gcc ./utils/readelf.c -o ./bin/readelf
+	gcc ./utils/readelf.c ./consts/value_tables.c -o ./bin/readelf
 
 reset: clean readelf
 
