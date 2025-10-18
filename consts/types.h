@@ -6,6 +6,7 @@ typedef uint32_t Offset_32;
 
 typedef uint64_t Address_64;
 typedef uint64_t Offset_64;
+typedef uint64_t Xword;
 
 typedef struct {
     unsigned char   e_ident[EI_NIDENT];
@@ -50,3 +51,25 @@ typedef struct {
     unsigned char abi_version;
     unsigned char padding[7];
 } EIdent;
+
+typedef struct {
+    Word p_type;
+    Offset_32 p_offset;
+    Address_32 p_vaddr;
+    Address_32 p_paddr;
+    Word p_filesz;
+    Word p_memsz;
+    Word p_flags;
+    Word p_align;
+} ProgramHeader_32;
+
+typedef struct {
+    Word p_type;
+    Word p_flags;
+    Offset_64 p_offset;
+    Address_64 p_vaddr;
+    Address_64 p_paddr;
+    Xword p_filesz;
+    Xword p_memsz;
+    Xword p_align;
+} ProgramHeader_64;
