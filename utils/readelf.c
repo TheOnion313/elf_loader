@@ -32,40 +32,102 @@ int hexdump_string(unsigned char *str, size_t str_size) {
         }
 }
 
-int print_elf_header(const char *elf_file_path) {
-    int ret = 0;
-    const int elf_file_fd = open(elf_file_path, O_RDONLY);
-
+int load_elf_header(const int elf_file_fd, void **header_ptr) {
     unsigned char e_ident[EI_NIDENT];
     size_t bytes_read = read(elf_file_fd, e_ident, EI_NIDENT);
     if (bytes_read != EI_NIDENT) {
         printf("Failed to read ELF header\n");
+        return 1;
+    }
+    const EIdent *ident = (EIdent*)e_ident;
+
+    if (ident->class == ELF_64BIT) {
+        ElfHeader_64 *elf_header = malloc(sizeof(ElfHeader_64));
+        const size_t rest_of_header = sizeof(ElfHeader_64) - EI_NIDENT;
+        if (!elf_header) {
+            printf("Failed to allocate memory for ELF header");
+            return 1;
+        }
+
+        bytes_read = read(elf_file_fd, ((unsigned char *)elf_header) + EI_NIDENT, rest_of_header);
+        if (bytes_read != rest_of_header) {
+            printf("Failed to read ELF header, read %ld bytes\n", bytes_read);
+            return 1;
+        }
+        memcpy(elf_header, e_ident, EI_NIDENT);
+        *header_ptr = elf_header;
+    } else {
+        ElfHeader_32 *elf_header = malloc(sizeof(ElfHeader_64));
+        const size_t rest_of_header = sizeof(ElfHeader_64) - EI_NIDENT;
+        if (!elf_header) {
+            printf("Failed to allocate memory for ELF header");
+            return 1;
+        }
+
+        bytes_read = read(elf_file_fd, ((unsigned char *)elf_header) + EI_NIDENT, rest_of_header);
+        if (bytes_read != rest_of_header) {
+            printf("Failed to read ELF header, read %ld bytes\n", bytes_read);
+            return 1;
+        }
+        memcpy(elf_header, e_ident, EI_NIDENT);
+        *header_ptr = elf_header;
+    }
+    printf("Returned from load elf header\n");
+
+    return 0;
+}
+
+int is_64bit(void *elf_header) {
+    unsigned char elf_class = ((EIdent*)&(((ElfHeader_64 *)elf_header)->e_ident))->class;
+    switch(elf_class) {
+        case ELF_64BIT:
+            return 1;
+        case ELF_32BIT:
+            return 0;
+        default:
+            return -1;
+    }
+}
+
+unsigned char get_data_order(void *elf_header) {
+    return ((EIdent*)&(((ElfHeader_64 *)elf_header)->e_ident))->data_order;
+}
+
+unsigned char get_version(void *elf_header) {
+    return ((EIdent*)&(((ElfHeader_64 *)elf_header)->e_ident))->version;
+}
+
+unsigned char get_os_abi(void *elf_header) {
+    return ((EIdent*)&(((ElfHeader_64 *)elf_header)->e_ident))->os_abi;
+}
+
+unsigned char get_abi_version(void *elf_header) {
+    return ((EIdent*)&(((ElfHeader_64 *)elf_header)->e_ident))->abi_version;
+}
+
+int print_elf_header(const int elf_file_fd) {
+    int ret = 0;
+
+    void *elf_header = NULL;
+    if (load_elf_header(elf_file_fd, &elf_header)) {
         ret = 1;
         goto clean;
     }
-
+    hexdump_string(elf_header, sizeof(ElfHeader_64));
     printf("ELF Header:\n");
     printf("  Magic:   ");
-    hexdump_string(e_ident, EI_NIDENT);
+    hexdump_string((char *)&(((ElfHeader_64 *)elf_header)->e_ident), EI_NIDENT);
     printf("\n");
 
-    const EIdent *ident = (EIdent*)e_ident;
-    char *class;
-    switch(ident->class) {
-        case ELF_64BIT:
-            class = "ELF64";
-            break;
-        case ELF_32BIT:
-            class = "ELF32";
-            break;
-        default:
-            printf("\nError: Invalid ELF Class\n");
-            ret = 1;
-            goto clean;
+    int is_64 = is_64bit(elf_header);
+    if (is_64 == -1) {
+        printf("\nError: Invalid ELF Class\n");
+        ret = 1;
+        goto clean;
     }
-    printf("  Class:                             %s\n", class);
+    printf("  Class:                             %s\n", is_64 ? "ELF64" : "ELF32");
     char *data;
-    switch(ident->data_order) {
+    switch(get_data_order(elf_header)) {
         case LSB:
             data = "LSB";
             break;
@@ -78,36 +140,20 @@ int print_elf_header(const char *elf_file_path) {
             goto clean;
     }
     printf("  Data:                              %s\n", data);
-    printf("  Version:                           %i\n", ident->version);
+    printf("  Version:                           %i\n", get_version(elf_header));
 
     char *os_abi;
-    if (ident->os_abi >= ELFOSABI_DEFINED_VALUES) {
+    if (get_os_abi(elf_header) >= ELFOSABI_DEFINED_VALUES) {
         os_abi = "Architecture-specific value";
     } else {
-        os_abi = os_abi_index[ident->os_abi];
+        os_abi = os_abi_index[get_os_abi(elf_header)];
     }
     printf("  OS/ABI:                            %s\n", os_abi);
-    printf("  ABI Version:                       %i\n", ident->abi_version);
+    printf("  ABI Version:                       %i\n", get_abi_version(elf_header));
 
-    if (ident->class == ELF_64BIT) {
-        ElfHeader_64 *elf_header = malloc(sizeof(ElfHeader_64));
-        const size_t rest_of_header = sizeof(ElfHeader_64) - EI_NIDENT;
-        if (!elf_header) {
-            printf("Failed to allocate memory for ELF header");
-            ret = 1;
-            goto clean_64;
-        }
-
-        bytes_read = read(elf_file_fd, ((unsigned char *)elf_header) + EI_NIDENT, rest_of_header);
-        printf("%ld\n", bytes_read);
-        if (bytes_read != rest_of_header) {
-            printf("Failed to read ELF header, read %ld bytes\n", bytes_read);
-            ret = 1;
-            goto clean_64;
-        }
-        memcpy(elf_header, e_ident, EI_NIDENT);
-        
-        HalfWord type = elf_header->e_type;
+    if (is_64) {
+        ElfHeader_64 *elf_header64 = elf_header;
+        HalfWord type = elf_header64->e_type;
         char *type_val;
         switch(type) {
             case ET_NONE:
@@ -131,47 +177,25 @@ int print_elf_header(const char *elf_file_path) {
         }
         printf("  Type:                              %s\n", type_val);
         char *machine_val = "Invalid";
-        HalfWord machine = elf_header->e_machine;
+        HalfWord machine = elf_header64->e_machine;
         if (machine < ELFMACHINE_DEFINED_VALUES) {
             machine_val = machine_index[machine];
         }
         printf("  Machine:                           %s\n", machine_val);
-        printf("  Version:                           0x%x\n", elf_header->e_version);
-        printf("  Entry point address:               0x%lx\n", elf_header->e_entry);
-        printf("  Start of program headers:          %ld (bytes into file)\n", elf_header->e_phoff);
-        printf("  Start of section headers:          %ld (bytes into file)\n", elf_header->e_shoff);
-        printf("  Flags:                             0x%x\n", elf_header->e_flags);
-        printf("  Size of this header:               %d (bytes)\n", elf_header->e_ehsize);
-        printf("  Size of program headers:           %d (bytes)\n", elf_header->e_phentsize);
-        printf("  Number of program headers:         %d\n", elf_header->e_phnum);
-        printf("  Size of section headers:           %d (bytes)\n", elf_header->e_shentsize);
-        printf("  Number of section headers:         %d\n", elf_header->e_shnum);
-        printf("  Section header string table index: %d\n", elf_header->e_shstrndx);
-        clean_64:
-        if (elf_file_fd) {
-            close(elf_file_fd);
-        }
-        if (elf_header) {
-            free(elf_header);
-        }
+        printf("  Version:                           0x%x\n", elf_header64->e_version);
+        printf("  Entry point address:               0x%lx\n", elf_header64->e_entry);
+        printf("  Start of program headers:          %ld (bytes into file)\n", elf_header64->e_phoff);
+        printf("  Start of section headers:          %ld (bytes into file)\n", elf_header64->e_shoff);
+        printf("  Flags:                             0x%x\n", elf_header64->e_flags);
+        printf("  Size of this header:               %d (bytes)\n", elf_header64->e_ehsize);
+        printf("  Size of program headers:           %d (bytes)\n", elf_header64->e_phentsize);
+        printf("  Number of program headers:         %d\n", elf_header64->e_phnum);
+        printf("  Size of section headers:           %d (bytes)\n", elf_header64->e_shentsize);
+        printf("  Number of section headers:         %d\n", elf_header64->e_shnum);
+        printf("  Section header string table index: %d\n", elf_header64->e_shstrndx);
     } else {
-        ElfHeader_32 *elf_header = malloc(sizeof(ElfHeader_64));
-        const size_t rest_of_header = sizeof(ElfHeader_64) - EI_NIDENT;
-        if (!elf_header) {
-            printf("Failed to allocate memory for ELF header");
-            ret = 1;
-            goto clean_32;
-        }
-
-        bytes_read = read(elf_file_fd, ((unsigned char *)elf_header) + EI_NIDENT, rest_of_header);
-        if (bytes_read != rest_of_header) {
-            printf("Failed to read ELF header, read %ld bytes\n", bytes_read);
-            ret = 1;
-            goto clean_32;
-        }
-        memcpy(elf_header, e_ident, EI_NIDENT);
-        
-        HalfWord type = elf_header->e_type;
+        ElfHeader_32 *elf_header32 = elf_header;
+        HalfWord type = elf_header32->e_type;
         char *type_val;
         switch(type) {
             case ET_NONE:
@@ -195,56 +219,56 @@ int print_elf_header(const char *elf_file_path) {
         }
         printf("  Type:                              %s\n", type_val);
         char *machine_val = "Invalid";
-        HalfWord machine = elf_header->e_machine;
+        HalfWord machine = elf_header32->e_machine;
         if (machine < ELFMACHINE_DEFINED_VALUES) {
             machine_val = machine_index[machine];
         }
         printf("  Machine:                           %s\n", machine_val);
-        printf("  Version:                           0x%x\n", elf_header->e_version);
-        printf("  Entry point address:               0x%4x\n", elf_header->e_entry);
-        printf("  Start of program headers:          %d (bytes into file)\n", elf_header->e_phoff);
-        printf("  Start of section headers:          %d (bytes into file)\n", elf_header->e_shoff);
-        printf("  Flags:                             0x%x\n", elf_header->e_flags);
-        printf("  Size of this header:               %d (bytes)\n", elf_header->e_ehsize);
-        printf("  Size of program headers:           %d (bytes)\n", elf_header->e_phentsize);
-        printf("  Number of program headers:         %d\n", elf_header->e_phnum);
-        printf("  Size of section headers:           %d (bytes)\n", elf_header->e_shentsize);
-        printf("  Number of section headers:         %d\n", elf_header->e_shnum);
-        printf("  Section header string table index: %d\n", elf_header->e_shstrndx);
-        clean_32:
-        if (elf_file_fd) {
-            close(elf_file_fd);
-        }
-        if (elf_header) {
-            free(elf_header);
-        }
+        printf("  Version:                           0x%x\n", elf_header32->e_version);
+        printf("  Entry point address:               0x%x\n", elf_header32->e_entry);
+        printf("  Start of program headers:          %d (bytes into file)\n", elf_header32->e_phoff);
+        printf("  Start of section headers:          %d (bytes into file)\n", elf_header32->e_shoff);
+        printf("  Flags:                             0x%x\n", elf_header32->e_flags);
+        printf("  Size of this header:               %d (bytes)\n", elf_header32->e_ehsize);
+        printf("  Size of program headers:           %d (bytes)\n", elf_header32->e_phentsize);
+        printf("  Number of program headers:         %d\n", elf_header32->e_phnum);
+        printf("  Size of section headers:           %d (bytes)\n", elf_header32->e_shentsize);
+        printf("  Number of section headers:         %d\n", elf_header32->e_shnum);
+        printf("  Section header string table index: %d\n", elf_header32->e_shstrndx);
     }
 
     clean:
-        if (elf_file_fd) {
-            close(elf_file_fd);
-        }
+    if (elf_header) {
+        free(elf_header);
+    }
 
     return ret;
 }
 
 int main(int argc, char *argv[]) {
+    int elf_file_fd, ret = 0;
     if (argc != 3) {
         printf("Usage: readelf <mode> elf-file\n");
-
-        return 1;
+        ret = 1;
+        goto clean;
     }
     const char *elf_file_path = argv[2];
     const char *mode = argv[1];
     if (mode[0] != '-') {
         printf("Unknown mode: %s\n", mode);
-
-        return 1;
+        ret = 1;
+        goto clean;
     }
+    elf_file_fd = open(elf_file_path, O_RDONLY);
     switch(mode[1]) {
         case 'h':
-            return print_elf_header(elf_file_path);
+            return print_elf_header(elf_file_fd);
         default:
             printf("Unknown mode: %s\n", mode);
     }
+    clean:
+        if (elf_file_fd) {
+            close(elf_file_fd);
+        }
+        return ret;
 }
