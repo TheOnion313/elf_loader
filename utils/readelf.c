@@ -408,6 +408,33 @@ int print_elf_program_headers(const int elf_file_fd) {
     return ret;
 }
 
+int print_elf_section_headers(const int elf_file_fd) {
+    int ret = 0;
+    void *elf_header = NULL, *program_header = NULL;
+    if (load_elf_header(elf_file_fd, &elf_header)) {
+        ret = 1;
+        goto clean;
+    }
+    int is_64 = is_64bit(elf_header);
+    if (is_64 == -1) {
+        printf("\nError: Invalid ELF Class\n");
+        ret = 1;
+        goto clean;
+    }
+    int sec_headers_num = GET_HEADER_VALUE(elf_header, e_shnum);
+    printf("There are %d section headers, starting at offset 0x", sec_headers_num);
+    print_offset((void *)GET_HEADER_VALUE_ADDR(elf_header, e_shoff), is_64);
+    printf(":\n\nSection Headers:\n");
+    printf("  [Nr] Name              Type             Address           Offset\n       Size              EntSize          Flags  Link  Info  Align\n");
+
+    clean:
+        if (elf_header) {
+            free(elf_header);
+        }
+
+    return ret;
+}
+
 int main(int argc, char *argv[]) {
     int elf_file_fd, ret = 0;
     if (argc != 3) {
@@ -428,6 +455,8 @@ int main(int argc, char *argv[]) {
             return print_elf_header(elf_file_fd);
         case 'l':
             return print_elf_program_headers(elf_file_fd);
+        case 'S':
+            return print_elf_section_headers(elf_file_fd);
         default:
             printf("Unknown mode: %s\n", mode);
     }
